@@ -40,7 +40,6 @@ View(dataset)
 head(dataset)
 ```
 
-
 ## Describe and explore the data
 
 ```{r}
