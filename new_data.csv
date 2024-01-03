@@ -1,0 +1,6 @@
+﻿id;gender;age;hypertension;heart_disease;ever_married;work_type;Residence_type;avg_glucose_level;bmi;smoking_status;stroke
+1;Male;55;1;0;Yes;Private ;Urban ;120.4 ;30.0 ;formerly smoked ;0
+2;Female;45;0;0;Yes;Self-employed;Rural;80.2;25.5;never smoked;0
+3;Male;72;1;1;Yes;Private ;Rural;150.1;28.7;smokes;1
+4;Female;35;0;0;Yes;Private ;Urban ;85.5;22.5;never smoked;0
+5;Male;60;0;1;Yes;Self-employed;Rural;170.2;31.8;smokes;1

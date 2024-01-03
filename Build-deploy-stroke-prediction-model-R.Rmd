@@ -1,0 +1,403 @@
+---
+title: "Build and deploy a stroke prediction model using R"
+author: "Mina Chavelle TCHOUA"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# About Data Analysis Report
+
+This RMarkdown file contains the report of the data analysis done for the project on building and deploying a stroke prediction model in R. It contains analysis such as data exploration, summary statistics and building the prediction models. The final report was completed on `r date()`. 
+
+**Data Description:**
+
+According to the World Health Organization (WHO) stroke is the 2nd leading cause of death globally, responsible for approximately 11% of total deaths.
+
+This data set is used to predict whether a patient is likely to get stroke based on the input parameters like gender, age, various diseases, and smoking status. Each row in the data provides relevant information about the patient.
+
+
+# Task One: Import data and data preprocessing
+
+## Load data and install packages
+```{r}
+#Install packages
+install.packages("tidyverse")
+install.packages("caret")
+
+```
+
+```{r}
+library(tidyverse)
+library(caret)
+```
+
+```{r}
+#Load data
+dataset=read.csv("healthcare-dataset-stroke-data.csv")
+View(dataset)
+head(dataset)
+```
+
+
+## Describe and explore the data
+
+```{r}
+str(dataset)
+```
+
+```{r}
+#convert'N/A' to 'NA'
+dataset$bmi <- ifelse(dataset$bmi == 'N/A', NA, dataset$bmi)
+```
+
+```{r}
+summary(dataset)
+```
+
+
+```{r}
+# convert bmi in numeric
+dataset$bmi <- as.numeric(dataset$bmi)
+
+#we will convert the different columns in factor to easily count.
+dataset$gender <- as.factor(dataset$gender)
+dataset$work_type <- as.factor(dataset$work_type)
+dataset$ever_married <- as.factor(dataset$ever_married)
+dataset$Residence_type <- as.factor(dataset$Residence_type)
+dataset$smoking_status <- as.factor(dataset$smoking_status)
+
+#print again the summary 
+summary(dataset)
+```
+We notice that in bmi's column we have 201 missingg values and we have only one row other in gender.
+
+```{r}
+# first we drop the only 1 row
+dataset = dataset[!dataset$gender == 'Other',]
+
+#we replace the 201 missing values by the mean
+dataset$bmi[is.na(dataset$bmi)]=mean(dataset$bmi,na.rm = TRUE)
+
+```
+
+
+```{r}
+# Count the number of missing values per columns
+missing_values <- dataset %>%
+  summarise_all(list(~ sum(is.na(.))))
+
+# print the missing values
+print(missing_values)
+```
+
+Now our dataset is clean and we can proceed. Let's generate some graphs to visualize data trends and relationships
+
+
+```{r}
+# Scatterplot for strke vs age
+plot(dataset$age, dataset$stroke, main = "Stroke vs Age", xlab = "Âge", ylab = "Stroke", pch = 16, col = "blue")
+```
+
+We notice that: the likelihood of experiencing a stroke tends to increase with age. 
+It's worth noting that there are observations with ages well below 20 years, some even close to 0. these instances likely pertain to very young children. An important consideration arises regarding whether to include these cases in the analysis. if included, the subsequent predictions will primarily pertain to adults. 
+Moreover, strokes in children likely have distinct causes compared to strokes in adult.
+
+```{r}
+# scatterplot per gender
+plot(dataset$age, dataset$stroke, main = "Stroke vs Age + Gender", xlab = "Âge", ylab = "Stroke", pch = 16, col = ifelse(dataset$gender == "Male", "blue", "pink"))
+legend("topright", legend = levels(dataset$gender), col = c("blue", "pink"), pch = 16)
+```
+
+
+```{r}
+# Scatterplot Stroke vs Glucose
+plot(dataset$avg_glucose_level, dataset$stroke, main = "Stroke vs Glucose", xlab = "Niveau de glucose", ylab = "Stroke", pch = 16, col = "green")
+```
+
+we notice that Observations where individuals have experienced a stroke typically exhibit elevated levels of glucose. 
+this average glucose level is likely a reflection of results from fasting blood sugar tests.
+
+```{r}
+# Scatterplot Stroke vs BMI
+plot(dataset$bmi, dataset$stroke, main = "Stroke vs BMI", xlab = "BMI", ylab = "Stroke", pch = 16, col = "purple")
+
+
+```
+
+A BMI exceeding 40 falls into the category of severe obesity, representing the third class of obesity. It is important to note that a BMI surpassing 75 should not be observed or considered, as it is an extreme value outside the conventional range.
+
+```{r}
+# Scatterplot Glucose vs BMI
+plot(dataset$avg_glucose_level, dataset$bmi, main = "Glucose vs BMI", xlab = "Avg Glucose Level", ylab = "BMI", pch = 16, col = "blue")
+
+
+```
+
+BMI outliers, where some have extremely high values but very low glucose levels, make us wonder about the accuracy of the data.
+
+it's interesting to notice that all the observations, regardless of whether a person had a stroke or not, seem to fall into two separate groups."
+
+```{r}
+# Scatterplot Glucose vs Age + Smoking
+plot(dataset$age, dataset$avg_glucose_level, main = "Glucose vs Age + Smoking", xlab = "Age", ylab = "Avg Glucose Level", pch = 16, col = ifelse(dataset$smoking_status == "smokes", "red", ifelse(dataset$smoking_status == "never smoked", "green", "blue")))
+legend("topright", legend = levels(dataset$smoking_status), col = c("red", "green", "blue"), pch = 16)
+
+```
+
+```{r}
+# Barplot Stroke vs Hypertension
+barplot(table(dataset$hypertension, dataset$stroke), beside = TRUE, legend = c("No Stroke", "Stroke"), col = c("green", "red"), main = "Stroke vs Hypertension", xlab = "Hypertension", ylab = "Count")
+
+```
+
+```{r}
+#Barplot Stroke vs Heart Disease
+barplot(table(dataset$heart_disease, dataset$stroke), beside = TRUE, legend = c("No Stroke", "Stroke"), col = c("green", "red"), main = "Stroke vs Heart Disease", xlab = "Heart Disease", ylab = "Count")
+
+```
+
+```{r}
+#Barplot Stroke vs Ever Married
+barplot(table(dataset$ever_married, dataset$stroke), beside = TRUE, legend = c("No Stroke", "Stroke"), col = c("green", "red"), main = "Stroke vs Ever Married", xlab = "Ever Married", ylab = "Count")
+
+```
+
+
+. Some data points look strange, especially in BMI (body mass index) and glucose levels. It's a good idea to get rid of BMI values higher than 75, and maybe even those higher than 60 (because a BMI over 40 means severe obesity).
+
+. Deciding whether to keep or remove data from people younger than 20 is a bit tricky. They give us useful information because age is an important factor, but for these younger individuals, some details like smoking, marital status, job type, and residence type might not make much sense or might be empty. Fixing the missing smoking status in kids using a model wouldn't make sense; it might be better to just assume they "never smoked."
+
+
+
+# Task Two: Build prediction models
+
+```{r}
+#Let's split our data into trianing and test datasets
+set.seed(123)
+
+number_obs <- nrow(dataset)
+split <- round(number_obs * 0.7)
+train_data <- dataset[1:split,]
+test_data <- dataset[(split + 1):nrow(dataset),]
+dim(train_data)
+dim(test_data)
+
+```
+Now we will build different models: KNN, Random forest and logistic regression to assess their performance in predicting strokes.
+
+
+```{r}
+# Modeling - Logistic Regression
+cat("Logistic Regression\n")
+logit <- glm(stroke ~ ., family = binomial, data = train_data)
+print(summary(logit))
+```
+The model is statistically significant like it is indicate by the p-value(6.21e-16) for the intercept.
+The coefficients for each predictor variable indicate their impact on the log-odds of the stroke. 
+Age, Hypertension and avg_glucose_level have significant impact
+
+```{r}
+# Modeling - KNN Classifier
+cat("\nKNN Classifier\n")
+train_data$stroke <- factor(train_data$stroke, levels = c("0", "1"))
+
+# Define controls for KNN model
+ctrl <- trainControl(preProcOptions = list(c("method" = "medianImpute"), "knnImpute"), verboseIter = TRUE)
+
+# Train KNN model
+formula_knn <- as.formula("stroke ~ .")
+knn_model <- train(formula, data = train_data, method = "knn", trControl = ctrl, tuneGrid = data.frame(k = 5))
+print(summary(knn_model))
+```
+
+We set for the training the number of neighbors to 5. and we fitted on the full training set
+
+```{r}
+# Modeling - Random Forest
+cat("\nRandom Forest\n")
+train_data$stroke <- factor(train_data$stroke, levels = c("0", "1"))
+
+# define control
+ctrl_rf <- trainControl(preProcOptions = list(c("method" = "medianImpute"), "knnImpute"), verboseIter = TRUE)
+
+# Train the model
+formula_rf <- as.formula("stroke ~ .")
+rf_model <- train(formula_rf, data = train_data, method = "rf", trControl = ctrl_rf)
+
+print(summary(rf_model))
+```
+
+
+# Task Three: Evaluate and select prediction models
+
+Now we will evaluate these models based on metrics:Precision, Recall, F-Measure.
+
+```{r}
+# Function to measure precision and recall
+measurePrecisionRecall <- function(predict, actual_labels, name = "Confusion Matrix - Train") {
+  confusion_mat <- confusionMatrix(predict, actual_labels)
+  fourfoldplot(confusion_mat$table, color = c("#CC6666", "#99CC99"), conf.level = 0, margin = 1, main = name)
+  
+  precision <- confusion_mat$byClass["Pos Pred Value"]
+  recall <- confusion_mat$byClass["Sensitivity"]
+  fmeasure <- confusion_mat$byClass["F1"]
+  
+  cat("\nResults\n")
+  cat('Precision:  ', sprintf("%.2f%%", precision * 100), '\n')
+  cat('Recall:     ', sprintf("%.2f%%", recall * 100), '\n')
+  cat('F-Measure:  ', sprintf("%.2f%%", fmeasure * 100), '\n')
+}
+```
+
+
+```{r}
+train_data$stroke <- factor(train_data$stroke, levels = c("0", "1"))
+pred_train <- factor(pred_train, levels = c("0", "1"))
+
+test_data$stroke <- factor(test_data$stroke, levels = levels(train_data$stroke))
+pred_test <- factor(pred_test, levels = levels(train_data$stroke))
+```
+
+
+```{r}
+# Predictions on Training Data - Logistic Regression
+pred_train_logit <- predict(logit, type = "response")
+pred_train_logit <- ifelse(pred_train_logit > 0.25, 1, 0)
+pred_train_logit <- factor(ifelse(pred_train_logit > 0.25, 1, 0), levels = levels(train_data$stroke))
+cat("\nTrain Data predicted result - logistic regression\n")
+measurePrecisionRecall(pred_train_logit, train_data$stroke, "Confusion Matrix - Train")
+
+# Predictions on Test Data - Logistic Regression
+pred_test_logit <- predict(logit, newdata = test_data, type = "response")
+pred_test_logit <- ifelse(pred_test_logit > 0.25, 1, 0)
+pred_test_logit <- factor(pred_test_logit, levels = levels(test_data$stroke))
+cat("\nTest Data predicted result - Logistic regression\n")
+measurePrecisionRecall(pred_test_logit, test_data$stroke, "Confusion Matrix - Test")
+```
+
+
+```{r}
+# Predictions on Training Data - KNN Classifier
+pred_train_knn <- predict(knn_model, newdata = train_data)
+pred_train_knn <- factor(pred_train_knn, levels = levels(train_data$stroke))
+cat("\nTrain Data predicted result - KNN\n")
+measurePrecisionRecall(pred_train_knn, train_data$stroke, "Confusion Matrix - Train")
+
+# Predictions on Test Data - KNN Classifier
+pred_test_knn <- predict(knn_model, newdata = test_data)
+cat("\nTest Data predicted result - KNN\n")
+measurePrecisionRecall(pred_test_knn, test_data$stroke, "Confusion Matrix - Test")
+```
+
+```{r}
+# Predicting on train data
+pred_train_rf <- predict(rf_model, newdata = train_data)
+pred_train_rf <- factor(pred_train_rf, levels = levels(train_data$stroke))
+cat("\nTrain Data predicted result - Random Forest\n")
+measurePrecisionRecall(pred_train_rf, train_data$stroke)
+
+# Predicting on test data
+pred_test_rf <- predict(rf_model, newdata = test_data)
+pred_test_rf <- factor(pred_test_rf, levels = levels(train_data$stroke))
+cat("\nTest Data predicted result - Random Forest\n")
+measurePrecisionRecall(pred_test_rf, test_data$stroke, "Confusion Matrix - Test - Random Forest")
+```
+Based on the results, the models was trained well on the training data.  Random Forest seems to have a high overall performance, especially on test data with 100% recall and 100% F-Measure.
+
+# Task Four: Deploy the prediction model
+
+```{r}
+if (!requireNamespace("randomForest", quietly = TRUE)) {
+  install.packages("randomForest")
+}
+library(randomForest)
+set.seed(7)
+final_model <- randomForest(stroke ~ ., data = dataset, ntree = 100, mtry = 5)
+saveRDS(final_model, file = "random_forest_model.rds")
+
+loaded_model <- readRDS("random_forest_model.rds")
+
+# New data on which to make predictions
+new_data <- read.csv("new_data.csv",sep = ";")
+```
+
+```{r}
+new_data$gender <- factor(new_data$gender, levels = levels(dataset$gender))
+new_data$ever_married <- factor(new_data$ever_married, levels = levels(dataset$ever_married))
+new_data$work_type <- factor(new_data$work_type, levels = levels(dataset$work_type))
+new_data$Residence_type <- factor(new_data$Residence_type, levels = levels(dataset$Residence_type))
+new_data$smoking_status <- factor(new_data$smoking_status, levels = levels(dataset$smoking_status))
+new_data$age <- as.numeric(new_data$age)
+new_data$avg_glucose_level <- as.numeric(new_data$avg_glucose_level)
+new_data$bmi <- as.numeric(new_data$bmi)
+```
+
+
+```{r}
+#  predictions with the loaded model
+predictions <- predict(loaded_model, new_data)
+predictions_percentage <- predictions * 100
+
+print(predictions_percentage)
+
+```
+
+
+
+
+# Task Five: Findings and Conclusions
+
+. Predictive Variables:
+
+  - Age: Our exploratory data analysis suggests that age is a significant predictor of stroke risk. Older individuals are often more susceptible to negative health effects.
+  - Average Glucose Level: Higher average glucose levels appear to be associated with an increased risk of stroke.
+  - Hypertension: The presence of hypertension is identified as a predictor, aligning with medical expectations.
+  
+. Surprising Predictors:
+
+  - Marriage Status and Employment Status: Surprisingly, marriage status and employment status also emerged as potential stroke predictors. Further in-depth analysis is warranted to understand the underlying reasons for these associations.
+. Non-Predictive Variables:
+
+  - Gender: Our analysis indicates that gender is not a significant predictor of stroke risk.
+  - BMI (Body Mass Index): Contrary to expectations, BMI is identified as a non-predictor in our analysis. Further investigation is needed to explore the relationship between BMI and stroke risk.
+  - Smoking Status: Smoking status is also identified as a non-predictor, which warrants a closer examination of its role in stroke risk.
+  
+. Data Limitations:
+
+It's important to note that our dataset may have limitations in capturing the complexity of stroke risk factors. The variables included may not cover all relevant aspects, and additional data could enhance the model's predictive capabilities.
+
+. Implications and Recommendations:
+
+Based on our current understanding, age, average glucose level, and hypertension are key factors associated with stroke risk. However, the unexpected inclusion of marriage and employment status as potential predictors requires further investigation.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
